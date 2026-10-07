@@ -1,0 +1,25 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/api.dart';
+
+void main() async { WidgetsFlutterBinding.ensureInitialized(); final p=await SharedPreferences.getInstance(); runApp(RadinApp(p)); }
+
+class RadinApp extends StatelessWidget {
+  final SharedPreferences prefs; const RadinApp(this.prefs,{super.key});
+  @override Widget build(BuildContext context) => MaterialApp(debugShowCheckedModeBanner:false,title:'رادین کلاب',theme:ThemeData(useMaterial3:true,fontFamily:'sans',colorSchemeSeed:Colors.indigo),home:prefs.getString('token')==null?LoginScreen(prefs):HomeScreen(prefs));
+}
+
+class LoginScreen extends StatefulWidget { final SharedPreferences prefs; const LoginScreen(this.prefs,{super.key}); @override State<LoginScreen> createState()=>_LoginState(); }
+class _LoginState extends State<LoginScreen>{ final phone=TextEditingController(); final code=TextEditingController(); bool sent=false,busy=false; String? error;
+ Future<void> send() async { setState(()=>busy=true); try{await ApiService(widget.prefs).requestOtp(phone.text.trim());setState(()=>sent=true);}catch(e){setState(()=>error='$e');}finally{setState(()=>busy=false);} }
+ Future<void> verify() async { setState(()=>busy=true); try{await ApiService(widget.prefs).verifyOtp(phone.text.trim(),code.text.trim());if(mounted)Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>HomeScreen(widget.prefs)));}catch(e){setState(()=>error='$e');}finally{setState(()=>busy=false);} }
+ @override Widget build(BuildContext c)=>Directionality(textDirection:TextDirection.rtl,child:Scaffold(body:Center(child:SingleChildScrollView(padding:const EdgeInsets.all(28),child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:430),child:Card(child:Padding(padding:const EdgeInsets.all(24),child:Column(children:[const Icon(Icons.sports_gymnastics,size:64),const SizedBox(height:12),const Text('رادین کلاب',style:TextStyle(fontSize:28,fontWeight:FontWeight.bold)),const SizedBox(height:8),const Text('ورود با شماره موبایل'),const SizedBox(height:24),TextField(controller:phone,keyboardType:TextInputType.phone,decoration:const InputDecoration(labelText:'شماره موبایل',hintText:'0912...')),if(sent)...[const SizedBox(height:14),TextField(controller:code,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'کد تایید'))],if(error!=null)...[const SizedBox(height:12),Text(error!,style:const TextStyle(color:Colors.red))],const SizedBox(height:20),SizedBox(width:double.infinity,child:FilledButton(onPressed:busy?null:(sent?verify:send),child:Text(busy?'لطفاً صبر کنید':(sent?'ورود':'دریافت کد'))))])))))))); }
+}
+
+class HomeScreen extends StatefulWidget{final SharedPreferences prefs;const HomeScreen(this.prefs,{super.key});@override State<HomeScreen> createState()=>_HomeState();}
+class _HomeState extends State<HomeScreen>{late ApiService api;Map<String,dynamic>? me,dash;List<dynamic> classes=[];bool loading=true;String? error;
+ @override void initState(){super.initState();api=ApiService(widget.prefs);load();}
+ Future<void> load()async{try{final m=await api.me();final d=await api.dashboard();final c=await api.classes();setState(()=>{me=m,dash=d,classes=c,loading=false});}catch(e){setState(()=>{error='$e',loading=false});}}
+ Future<void> logout()async{await api.logout();if(mounted)Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>LoginScreen(widget.prefs)));}
+ @override Widget build(BuildContext c){final memberships=(me?['memberships'] as List? ?? []);return Directionality(textDirection:TextDirection.rtl,child:Scaffold(appBar:AppBar(title:Text('سلام ${me?['full_name']??''}'),actions:[IconButton(onPressed:logout,icon:const Icon(Icons.logout))]),body:loading?const Center(child:CircularProgressIndicator()):error!=null?Center(child:Text(error!)):RefreshIndicator(onRefresh:load,child:ListView(padding:const EdgeInsets.all(16),children:[if(memberships.length>1)Card(child:DropdownButton<int>(isExpanded:true,value:api.membershipId,items:memberships.map<DropdownMenuItem<int>>((m)=>DropdownMenuItem(value:(m['id'] as num).toInt(),child:Padding(padding:const EdgeInsets.all(12),child:Text('${m['club_name']} — ${m['role']}')))).toList(),onChanged:(v)async{if(v!=null){await api.selectMembership(v);await load();}})),Card(child:ListTile(leading:const Icon(Icons.business),title:Text('${dash?['club']?['name']??'باشگاه'}'),subtitle:Text('نقش: ${dash?['role']??'-'}'))),if(dash?['manager']!=null)Card(child:ListTile(title:const Text('مدیریت'),subtitle:Text('هنرجو: ${dash!['manager']['students']}   مربی: ${dash!['manager']['coaches']}'))),if(dash?['student']!=null)Card(child:ListTile(title:const Text('حضور و غیاب'),subtitle:Text('حاضر: ${dash!['student']['attendance']['present']} | غایب: ${dash!['student']['attendance']['absent']}'))),const Padding(padding:EdgeInsets.only(top:16,bottom:8),child:Text('کلاس‌ها',style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),...classes.map((x)=>Card(child:ListTile(title:Text('${x['title']??''}'),subtitle:Text('${x['day']??''} ${x['time']??''}\nمربی: ${x['coach']??'-'}'))))])));}
+}
